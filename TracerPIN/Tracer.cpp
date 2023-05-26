@@ -32,6 +32,9 @@
 #include <sys/syscall.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <stdio.h>
 #ifndef GIT_DESC
 #define GIT_DESC "(unknown version)"
 #endif //GIT_DESC
@@ -39,6 +42,36 @@ using namespace std;
 /* ===================================================================== */
 /* Global Variables */
 /* ===================================================================== */
+
+
+#define SHARED_MEMORY_KEY 1234
+
+typedef struct {
+    // Define your shared data variables here
+    char lock;
+} SharedLock;
+
+SharedLock* sharedVal;
+
+void attach() {
+    //printf("Getting shared memory\n");
+    int shmid = shmget(SHARED_MEMORY_KEY, sizeof(SharedLock), 0);
+    if (shmid == -1) {
+        perror("shmget");
+
+        printf("Cannot attach shmemory");
+        return;
+    }
+
+    sharedVal = (SharedLock*)shmat(shmid, NULL, 0);
+}
+
+char get_lock() {
+    
+    char lock = sharedVal->lock;
+    
+    return lock;
+}
 
 std::ofstream TraceFile;
 std::stringstream value;
@@ -76,7 +109,7 @@ sqlite3 *db;
 sqlite3_int64 bbl_id = 0, ins_id = 0;
 sqlite3_stmt *info_insert, *bbl_insert, *call_insert, *lib_insert, *ins_insert, *mem_insert, *thread_insert, *thread_update;
 
-enum LogTypeType { HUMAN, SQLITE };
+enum LogTypeType { HUMAN, SQLITE};
 static const char *SETUP_QUERY = 
 "CREATE TABLE IF NOT EXISTS info (key TEXT PRIMARY KEY, value TEXT);\n"
 "CREATE TABLE IF NOT EXISTS lib (name TEXT, base TEXT, end TEXT);\n"
@@ -162,6 +195,11 @@ extern "C" int utimes(const char *path, const struct timeval times[2])
 /* ===================================================================== */
 /* Print Help Message                                                    */
 /* ===================================================================== */
+bool fileExists() {
+    return get_lock() == 1;
+}
+
+#define SKIP_IF_LOCK if(fileExists()) return;
 
 INT32 Usage()
 {
@@ -213,6 +251,9 @@ BOOL ExcludedAddress(ADDRINT ip)
     case 3:
         return ((ip < filter_begin) || (ip > filter_end));
         break;
+    case 4: // Wasm
+        return (ip > (0x4ff000000000));
+        break;
     default:
         break;
     }
@@ -242,6 +283,7 @@ BOOL ExcludedAddressLive(ADDRINT ip)
 
 VOID printInst(ADDRINT ip, string *disass, INT32 size)
 {
+    if(fileExists()) return;
     UINT8 v[32];
     // test on logfilterlive here to avoid calls when not using live filtering
     if (logfilterlive && ExcludedAddressLive(ip))
@@ -251,6 +293,8 @@ VOID printInst(ADDRINT ip, string *disass, INT32 size)
         cerr << "[!] Instruction size > 32 at " << dec << bigcounter << hex << (void *)ip << " " << *disass << endl;
         return;
     }
+    // Custom filter
+    
     PIN_GetLock(&lock, ip);
     if (InfoType >= I) bigcounter++;
     InfoType=I;
@@ -295,6 +339,9 @@ VOID printInst(ADDRINT ip, string *disass, INT32 size)
 
 static VOID RecordMemHuman(ADDRINT ip, CHAR r, ADDRINT addr, UINT8* memdump, INT32 size, BOOL isPrefetch)
 {
+    if(fileExists()) return;
+    // TODO filter address here 
+
     TraceFile << "[" << r << "]" << setw(10) << dec << bigcounter << hex << setw(16) << (void *) ip << "                                                   "
               << " " << setw(18) << (void *) addr << " size="
               << dec << setw(2) << size << " value="
@@ -342,6 +389,7 @@ static VOID RecordMemHuman(ADDRINT ip, CHAR r, ADDRINT addr, UINT8* memdump, INT
 static VOID RecordMemSqlite(ADDRINT ip, CHAR r, ADDRINT addr, UINT8* memdump, INT32 size, BOOL isPrefetch)
 {
     // Insert read or write
+    if(fileExists()) return;
     sqlite3_reset(mem_insert);
     sqlite3_bind_int64(mem_insert, 1, r == 'R' ? (ins_id+1) : ins_id );
     value.str("");
@@ -406,6 +454,9 @@ static VOID RecordMemSqlite(ADDRINT ip, CHAR r, ADDRINT addr, UINT8* memdump, IN
 static VOID RecordMem(ADDRINT ip, CHAR r, ADDRINT addr, INT32 size, BOOL isPrefetch)
 {
     UINT8 memdump[256];
+   // addr =  0x50000000 - addr;
+
+    if(fileExists()) return;
     // test on logfilterlive here to avoid calls when not using live filtering
     if (logfilterlive && ExcludedAddressLive(ip))
         return;
@@ -458,6 +509,7 @@ static VOID RecordMemWrite(ADDRINT ip)
 /* ================================================================================= */
 VOID Instruction_cb(INS ins, VOID *v)
 {
+    if(fileExists()) return;
     ADDRINT ceip = INS_Address(ins);
     if(ExcludedAddress(ceip))
         return;
@@ -532,6 +584,7 @@ VOID Instruction_cb(INS ins, VOID *v)
 /* ================================================================================= */
 void ImageLoad_cb(IMG Img, void *v)
 {
+    if(fileExists()) return;
     std::string imageName = IMG_Name(Img);
     ADDRINT lowAddress = IMG_LowAddress(Img);
     ADDRINT highAddress = IMG_HighAddress(Img);
@@ -615,6 +668,7 @@ void ImageLoad_cb(IMG Img, void *v)
 
 void LogBasicBlock(ADDRINT addr, UINT32 size)
 {
+    if(fileExists()) return;
     PIN_GetLock(&lock, addr);
     if (InfoType >= B) bigcounter++;
     InfoType=B;
@@ -649,6 +703,7 @@ void LogBasicBlock(ADDRINT addr, UINT32 size)
 
 void LogCallAndArgs(ADDRINT ip, ADDRINT arg0, ADDRINT arg1, ADDRINT arg2)
 {
+    if(fileExists()) return;
     string nameFunc = "";
     string nameArg0 = "";
     string nameArg1 = "";
@@ -695,6 +750,7 @@ void LogCallAndArgs(ADDRINT ip, ADDRINT arg0, ADDRINT arg1, ADDRINT arg2)
 
 void LogIndirectCallAndArgs(ADDRINT target, BOOL taken, ADDRINT arg0, ADDRINT arg1, ADDRINT arg2)
 {
+    if(fileExists()) return;
     if (!taken)
         return;
     LogCallAndArgs(target, arg0, arg1, arg2);
@@ -708,6 +764,7 @@ void LogIndirectCallAndArgs(ADDRINT target, BOOL taken, ADDRINT arg0, ADDRINT ar
 /* ================================================================================= */
 void Trace_cb(TRACE trace, void *v)
 {
+    if(fileExists()) return;
     /* Iterate through basic blocks */
     for(BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl))
     {
@@ -800,6 +857,7 @@ void Trace_cb(TRACE trace, void *v)
 /* ================================================================================= */
 void ThreadStart_cb(THREADID threadIndex, CONTEXT *ctxt, INT32 flags, VOID *v)
 {
+    if(fileExists()) return;
     PIN_GetLock(&lock, threadIndex + 1);
     if (InfoType >= T) bigcounter++;
     InfoType=T;
@@ -821,6 +879,7 @@ void ThreadStart_cb(THREADID threadIndex, CONTEXT *ctxt, INT32 flags, VOID *v)
 
 void ThreadFinish_cb(THREADID threadIndex, const CONTEXT *ctxt, INT32 code, VOID *v)
 {
+    if(fileExists()) return;
     PIN_GetLock(&lock, threadIndex + 1);
     switch (LogType) {
         case HUMAN:
@@ -843,6 +902,7 @@ void ThreadFinish_cb(THREADID threadIndex, const CONTEXT *ctxt, INT32 code, VOID
 
 VOID Fini(INT32 code, VOID *v)
 {
+    //if(fileExists()) return;
     switch (LogType) {
         case HUMAN:
             TraceFile.close();
@@ -871,6 +931,7 @@ VOID Fini(INT32 code, VOID *v)
 
 int  main(int argc, char *argv[])
 {
+    attach();
     PIN_InitSymbols();
 
     if( PIN_Init(argc,argv) )
@@ -885,11 +946,11 @@ int  main(int argc, char *argv[])
         cerr << "ERR: Failed parsing option -f" <<endl;
         return 1;
     }
-    if ((endptr[0] == '\0') && (logfilter > 2)) {
+    if ((endptr[0] == '\0') && (logfilter > 4)) {
         cerr << "ERR: Failed parsing option -f" <<endl;
         return 1;
     }
-    if (logfilter > 2) {
+    if (logfilter > 2 && logfilter != 4) {
         filter_begin=logfilter;
         logfilter = 3;
         char *endptr2;
@@ -967,6 +1028,7 @@ int  main(int argc, char *argv[])
             }
             break;
         case SQLITE:
+        
             remove(TraceName.c_str());
             if(sqlite3_open(TraceName.c_str(), &db) != SQLITE_OK)
             {
