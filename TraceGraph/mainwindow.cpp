@@ -58,6 +58,7 @@ void MainWindow::openFile(const char* filename) {
 void MainWindow::openFileAndSave(const char* filename, char* saveto) {
     // Set the size
     ui->graph->setFixedSize(4096, 4096);
+    // Set the save location
     ui->graph->setSaveTo(saveto);
     QMetaObject::invokeMethod(&sqlite_client, "connectToDatabase", Qt::QueuedConnection, Q_ARG(QString, QString(filename)));
 }
