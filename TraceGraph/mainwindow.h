@@ -45,6 +45,8 @@ public:
     explicit MainWindow(QWidget *parent = 0);
     ~MainWindow();   
     void openFile(const char* filename);
+    void openFileAndSave(const char* filename, char* saveto);
+    
 
 protected:
     virtual void resizeEvent(QResizeEvent* event);
@@ -53,6 +55,9 @@ private slots:
 
     void on_actionMetadata_triggered();
     void onInvalidDatabase();
+
+    void quit();
+
     void positionChanged(unsigned long long address, unsigned long long time);
     void cursorPositionChanged(unsigned long long address, unsigned long long time);
 

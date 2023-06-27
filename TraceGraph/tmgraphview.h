@@ -26,6 +26,8 @@
 #include <QWidget>
 #include <QSize>
 #include <QWheelEvent>
+#include <QApplication>
+#include <QCoreApplication>
 #include <QPainter>
 #include <QList>
 #include <QBrush>
@@ -71,17 +73,20 @@ public:
     QSize sizeHint() const;
     QSize minimumSizeHint() const;
     void setSqliteClient(SqliteClient *sqlite_client);
+    void setSaveTo(char *saveto);
     void displayTrace();
     void timeMove(long long dt);
     void addressMove(long long da);
     void setAddress(unsigned long long view_address);
     void setTime(unsigned long long view_time);
     void zoomToOverview();
+    
 
 signals:
     void positionChange(unsigned long long view_address, unsigned long long view_time);
     void cursorPositionChange(unsigned long long view_address, unsigned long long view_time);
     void eventDescriptionQueried(Event ev);
+    void finished();
 
 public slots:
     void onEventReceived(Event ev);
@@ -115,6 +120,8 @@ private:
     void updateZoomFactors();
     void paintOneEvent(const Event& e, unsigned long windows_addr_size);
     void setPtrEvent(QMouseEvent * event);
+
+    char* saveto = NULL;
 
 protected:
     void wheelEvent(QWheelEvent *event);

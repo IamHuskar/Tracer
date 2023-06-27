@@ -114,6 +114,21 @@ void TMGraphView::onDBProcessingFinished()
     // Automatically show full view upon loading a DB
     zoomToOverview();
     update();
+
+    if (this->saveto != NULL) {
+        qDebug() << "Saving image." << this->saveto;
+        QPixmap pixmap = grab();
+        pixmap.save(this->saveto);
+        this->saveto = NULL;
+
+        emit finished();
+        qDebug() << "Calculations finished successfully. Exiting.";
+
+        painter->end();
+        // call system kill this app
+        system("kill -9 tracegraph");
+
+    }
 }
 
 void TMGraphView::onEventReceived(Event ev)
@@ -335,6 +350,10 @@ void TMGraphView::setAddress(unsigned long long address)
     update();
 }
 
+void TMGraphView::setSaveTo(char *saveto){
+    this->saveto = saveto;
+}
+
 void TMGraphView::setTime(unsigned long long time)
 {
     view_time = time;
@@ -369,6 +388,7 @@ void TMGraphView::zoomToOverview()
     update();
 }
 
+
 void TMGraphView::onWindowResize()
 {
     // Special behaviour if overview: fit to new window size
@@ -389,12 +409,12 @@ void TMGraphView::wheelEvent(QWheelEvent *event)
     Qt::KeyboardModifiers mod = QGuiApplication::keyboardModifiers();
     if(mod == Qt::NoModifier || mod == Qt::ControlModifier)
     {
-        addressMove((long long)(event->position().x()/address_zoom_factor*(2*f)/(1+f)));
+        addressMove((long long)(event->pos().x()/address_zoom_factor*(2*f)/(1+f)));
         address_zoom_factor *= (1+f)/(1-f);
     }
     if(mod == Qt::NoModifier || mod == Qt::ShiftModifier)
     {
-        timeMove((long long)(event->position().y()/time_zoom_factor*(2*f)/(1+f)));
+        timeMove((long long)(event->pos().y()/time_zoom_factor*(2*f)/(1+f)));
         time_zoom_factor *= (1+f)/(1-f);
     }
     update();
@@ -662,6 +682,8 @@ void TMGraphView::paintEvent(QPaintEvent* /*event*/)
     // We adapt the size to keep each event size above 1px if the zoom is too low
     if(trace_state == TRACE_READY)
     {
+
+        qDebug() << "Painting events";
         if (display_ptr_event && ptr_event.time >= view_time && ptr_event.time < view_time + current_windows_time_size)
         {
             paintOneEvent(ptr_event, current_windows_addr_size);
@@ -698,10 +720,19 @@ void TMGraphView::paintEvent(QPaintEvent* /*event*/)
              }
              block_it++;
         }
+
+        qDebug() << "Painting finished";
+        // Save if saveto is not null
+        
     }
-    else if(trace_state == PROCESSING_DB)
+    else if(trace_state == PROCESSING_DB){
+        qDebug() << "Processing database";
         painter->drawText(this->width()/2, this->height()/2, "Processing database.");
-    else if(trace_state == NO_DB)
+    }
+    else if(trace_state == NO_DB){
+        qDebug() << "No database";
         painter->drawText(this->width()/2, this->height()/2, "No database selected.");
+    }
+    qDebug() << "Nothing";
     painter->end();
 }

@@ -22,6 +22,7 @@
 /* ===================================================================== */
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
+#include "iostream"
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -35,6 +36,7 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(ui->graph, &TMGraphView::cursorPositionChange, this, &MainWindow::cursorPositionChanged);
     connect(ui->graph_address, &QLineEdit::returnPressed, this, &MainWindow::on_graph_address_editingFinished);
     connect(ui->graph_time, &QLineEdit::returnPressed, this, &MainWindow::on_graph_time_editingFinished);
+    connect(ui->graph, &TMGraphView::finished, this, &MainWindow::quit);
     //Querying event description is a three party interconnection
     connect(ui->graph, &TMGraphView::eventDescriptionQueried, &sqlite_client, &SqliteClient::queryEventDescription);
     connect(&sqlite_client, &SqliteClient::receivedEventDescription, ui->event_display, &QTextEdit::setText);
@@ -53,6 +55,13 @@ void MainWindow::openFile(const char* filename) {
     QMetaObject::invokeMethod(&sqlite_client, "connectToDatabase", Qt::QueuedConnection, Q_ARG(QString, QString(filename)));
 }
 
+void MainWindow::openFileAndSave(const char* filename, char* saveto) {
+    // Set the size
+    ui->graph->setFixedSize(4096, 4096);
+    ui->graph->setSaveTo(saveto);
+    QMetaObject::invokeMethod(&sqlite_client, "connectToDatabase", Qt::QueuedConnection, Q_ARG(QString, QString(filename)));
+}
+
 void MainWindow::on_actionMetadata_triggered()
 {
     if(sqlite_client.isConnectedToDatabase())
@@ -66,6 +75,14 @@ void MainWindow::on_actionMetadata_triggered()
         error.setText("Not connected to a database.");
         error.exec();
     }
+}
+
+void MainWindow::quit() {
+    std::cout << "Quit called" << endl;
+    worker_thread.exit();
+    worker_thread.wait(1000);
+    delete ui;
+    exit(0);
 }
 
 void MainWindow::onInvalidDatabase()
