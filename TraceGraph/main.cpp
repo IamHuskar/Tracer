@@ -22,16 +22,22 @@
 /* ===================================================================== */
 #include "mainwindow.h"
 #include <QApplication>
+#include <chrono>
+#include <thread>
+
 
 int main(int argc, char *argv[])
 {
     qRegisterMetaType<Event>("Event");
     QApplication a(argc, argv);
     MainWindow w;
-    if(argc > 1) {
+    if(argc == 1) {
         w.openFile(argv[1]);
     }
-    w.show();
+    if(argc > 1) {
+        w.openFileAndSave(argv[1], argv[2]);
+    }
 
+    w.show();
     return a.exec();
 }
